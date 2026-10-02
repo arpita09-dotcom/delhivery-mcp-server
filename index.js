@@ -42,28 +42,29 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 });
 
-const handleSSE = async (req, res) => {
+app.get(['/', '/sse'], async (req, res) => {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
-  const publicUrl = `${protocol}://${host}/messages?sessionId=${Date.now()}`;
+  const sessionId = Date.now().toString() + Math.floor(Math.random() * 1000);
+  const publicUrl = `${protocol}://${host}/messages?sessionId=${sessionId}`;
   
   const transport = new SSEServerTransport(publicUrl, res);
   await mcpServer.connect(transport);
   
-  const sessionId = new URL(publicUrl).searchParams.get('sessionId');
   transports.set(sessionId, transport);
-  
   res.on('close', () => transports.delete(sessionId));
-};
+});
 
-app.get('/', handleSSE);
-app.get('/sse', handleSSE);
-
-app.post('/messages', express.json(), async (req, res) => {
+// CRITICAL FIX: Removed express.json() so the MCP SDK reads the raw stream itself
+app.post('/messages', async (req, res) => {
   const sessionId = req.query.sessionId;
   const transport = transports.get(sessionId);
   if (!transport) return res.status(404).send('Session not found');
   await transport.handlePostMessage(req, res);
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, '0.0.0.0', () => console.log('MCP Server Live!'));
 });
 
 const port = process.env.PORT || 3000;
